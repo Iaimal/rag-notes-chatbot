@@ -1,7 +1,7 @@
 # search.py
 import os
-from sentence_transformers import SentenceTransformer, util
-import numpy as np
+import chromadb
+from sentence_transformers import SentenceTransformer
 
 MIN_SCORE = 0.2
 embed_model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -33,11 +33,25 @@ def load_and_chunk_notes(folder="notes"):
             all_sources.extend([filename] * len(chunks))
     return all_chunks, all_sources
 
+# --- Vector database (new) ---
+client = chromadb.Client()  # lives in memory, rebuilt each time the app starts
+collection = client.get_or_create_collection(
+    name="notes",
+    metadata={"hnsw:space": "cosine"},  # compare by cosine, same as before
+)
+
 chunks, sources = load_and_chunk_notes()
-chunk_embeddings = embed_model.encode(chunks)
+collection.upsert(
+    ids=[f"chunk-{i}" for i in range(len(chunks))],
+    documents=chunks,
+    embeddings=embed_model.encode(chunks).tolist(),
+    metadatas=[{"source": s} for s in sources],
+)
 
 def search(query):
-    query_embedding = embed_model.encode(query)
-    scores = util.cos_sim(query_embedding, chunk_embeddings)
-    best_idx = int(np.argmax(scores))
-    return sources[best_idx], chunks[best_idx], scores[0][best_idx].item()
+    query_embedding = embed_model.encode(query).tolist()
+    results = collection.query(query_embeddings=[query_embedding], n_results=1)
+    chunk = results["documents"][0][0]
+    source = results["metadatas"][0][0]["source"]
+    score = 1 - results["distances"][0][0]  # Chroma returns distance, so flip it to a score
+    return source, chunk, score
