@@ -15,30 +15,27 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-        if msg.get("source"):
-            st.caption(f"Source: {msg['source']} (confidence: {msg['score']:.2f})")
+        if msg.get("sources"):
+            st.caption(f"Sources: {', '.join(msg['sources'])} (confidence: {msg['score']:.2f})")
 
 # The input box at the bottom of the page
 question = st.chat_input("Ask something about your notes...")
 
 if question:
-    # Show the user's own message immediately
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.write(question)
 
-    # Run the actual RAG pipeline
     with st.chat_message("assistant"):
         with st.spinner("Searching your notes..."):
-            answer, source_file, score = rag_answer(question)
+            answer, source_files, score = rag_answer(question)
         st.write(answer)
-        if source_file:
-            st.caption(f"Source: {source_file} (confidence: {score:.2f})")
+        if source_files:
+            st.caption(f"Sources: {', '.join(source_files)} (confidence: {score:.2f})")
 
-    # Save the assistant's reply too, so it persists across reruns
     st.session_state.messages.append({
         "role": "assistant",
         "content": answer,
-        "source": source_file,
+        "sources": source_files,
         "score": score
     })

@@ -33,7 +33,7 @@ def load_and_chunk_notes(folder="notes"):
             all_sources.extend([filename] * len(chunks))
     return all_chunks, all_sources
 
-# --- Vector database (new) ---
+# --- Vector database ---
 client = chromadb.Client()  # lives in memory, rebuilt each time the app starts
 collection = client.get_or_create_collection(
     name="notes",
@@ -48,10 +48,15 @@ collection.upsert(
     metadatas=[{"source": s} for s in sources],
 )
 
-def search(query):
+def search(query, k=3):
     query_embedding = embed_model.encode(query).tolist()
-    results = collection.query(query_embeddings=[query_embedding], n_results=1)
-    chunk = results["documents"][0][0]
-    source = results["metadatas"][0][0]["source"]
-    score = 1 - results["distances"][0][0]  # Chroma returns distance, so flip it to a score
-    return source, chunk, score
+    results = collection.query(query_embeddings=[query_embedding], n_results=k)
+
+    matches = []
+    for i in range(len(results["documents"][0])):
+        chunk = results["documents"][0][i]
+        source = results["metadatas"][0][i]["source"]
+        score = 1 - results["distances"][0][i]
+        matches.append((source, chunk, score))
+
+    return matches
