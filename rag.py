@@ -34,7 +34,7 @@ def rag_answer(question):
         return "I couldn't find anything relevant in your notes.", None, 0
 
     context = "\n\n".join(m[1] for m in good_matches)
-    sources = [m[0] for m in good_matches]
+    sources = list(dict.fromkeys(m[0] for m in good_matches))
 
     answer = generate_answer(context, question)
     return answer, sources, good_matches[0][2]
