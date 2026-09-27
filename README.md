@@ -1,17 +1,18 @@
 # 📚 Notes RAG Chatbot
 
-A chatbot that answers questions using only your own notes and shows which file each answer came from.
+A chatbot that answers questions using only your own notes and shows which files each answer came from.
 
 **🔗 Live demo:** https://rag-notes-chatbot-egdcv5vmdkt4ufnwdk5g4n.streamlit.app/
 
 ## What it does
 
-You ask a question. The app finds the most relevant part of your notes, gives it to a language model, and shows the answer together with the source file and a confidence score. If nothing in the notes is relevant, it says so instead of guessing.
+You ask a question. The app finds the most relevant parts of your notes — up to three — and gives them to a language model, then shows the answer together with every source file used and a confidence score. If nothing in the notes is relevant, it says so instead of guessing.
 
 ## Features
 
 - Answers grounded in your own text files, not the model's memory
-- Source citation with a confidence score for every answer
+- Retrieves multiple chunks per question, so it can combine information from more than one note
+- Source citations with a confidence score for every answer
 - A minimum-score check that rejects questions your notes can't answer
 - Hand-written text chunking with overlap
 - Semantic search with a Chroma vector database
@@ -21,12 +22,13 @@ You ask a question. The app finds the most relevant part of your notes, gives it
 
 1. **Chunking:** each note in `notes/` is split into smaller pieces with a hand-written `chunk_text()` function. Long paragraphs are cut into overlapping segments so that no idea is lost at a boundary.
 2. **Embedding and storage:** every chunk is turned into a vector with `sentence-transformers` (`all-MiniLM-L6-v2`) and stored in a Chroma vector database, together with its source file name.
-3. **Retrieval:** your question is embedded the same way, and Chroma returns the most similar chunk (cosine similarity). If its score is below a minimum threshold, the app answers "I couldn't find anything relevant in your notes."
-4. **Generation:** the retrieved chunk and your question are sent to `Qwen2.5-7B-Instruct` through the Hugging Face Inference API, with an instruction to answer only from the given context.
-5. **Interface:** a Streamlit chat UI shows the answer with its source file and confidence.
+3. **Retrieval:** your question is embedded the same way, and Chroma returns the top 3 most similar chunks (cosine similarity). Each is checked against a minimum score threshold, and only the ones that pass are kept. If none pass, the app answers "I couldn't find anything relevant in your notes."
+4. **Generation:** the surviving chunks are joined into one context and sent, with your question, to `Qwen2.5-7B-Instruct` through the Hugging Face Inference API (via the Featherless AI provider), with an instruction to answer only from the given context. This lets the app answer questions that need information from more than one note.
+5. **Interface:** a Streamlit chat UI shows the answer with its source files and confidence.
 
 ```
-Question → embed → Chroma finds the best chunk → score check → LLM answers from that chunk → answer + source
+Question → embed → Chroma finds the top 3 chunks → score check on each →
+surviving chunks joined into context → LLM answers from that context → answer + sources
 ```
 
 ## Example questions
@@ -36,6 +38,7 @@ The included notes cover a few machine learning topics. Try:
 - "What is the attention mechanism in transformers?"
 - "How do I stop overfitting?"
 - "How does gradient descent work?"
+- "Compare gradient descent and overfitting" (needs information from two notes)
 - "Who won the World Cup?" (not in the notes, so the app should say it found nothing relevant)
 
 ## Project structure
@@ -59,7 +62,7 @@ The included notes cover a few machine learning topics. Try:
 ```
    pip install -r requirements.txt
 ```
-3. Set your Hugging Face token. You need a free access token that is allowed to use Inference Providers:
+3. Set your Hugging Face token. You need a free, fine-grained access token with "Make calls to Inference Providers" enabled:
 ```
    set HF_TOKEN=your_huggingface_token
 ```
@@ -88,17 +91,20 @@ Never commit your token to the repo. It belongs only in Streamlit's Secrets box 
 
 ## Limitations
 
-- It retrieves a single best-matching chunk per question, so answers that need information from several notes can be incomplete.
+- It retrieves up to 3 chunks per question, so a question needing information from more than 3 notes may still be incomplete.
 - The Chroma database lives in memory and is rebuilt every time the app starts, so it isn't saved between restarts.
 - Only `.txt` files are supported.
-- RAG reduces hallucination but doesn't eliminate it. Always check the source shown.
+- RAG reduces hallucination but doesn't eliminate it. Always check the sources shown.
+- It has no memory of earlier questions in the conversation; each question is answered independently.
+- Depends on a hosted model through an external API. Model and provider availability can change, which may require updating the provider or model name in `rag.py`.
 - The free hosted app goes to sleep after a period without visitors and takes a moment to wake up.
 
 ## Possible improvements
 
-- Retrieve several chunks per question instead of one
+- Rerank retrieved chunks before sending them to the LLM
 - Save the vector database to disk
 - Support PDF and Markdown files
+- Add conversation memory for follow-up questions
 - Add Docker for containerized deployment
 - Evaluate answer quality with a set of test questions
 
