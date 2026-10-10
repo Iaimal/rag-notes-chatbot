@@ -1,6 +1,6 @@
 # 📚 Notes RAG Chatbot
 
-A chatbot that answers questions using only your own notes and shows which files each answer came from.
+A chatbot that answers questions using only your own notes and shows which files each answer came from. It runs as a Streamlit app, and also as a FastAPI service that can be containerized with Docker.
 
 **🔗 Live demo:** https://rag-notes-chatbot-egdcv5vmdkt4ufnwdk5g4n.streamlit.app/
 
@@ -17,14 +17,16 @@ You ask a question. The app finds the most relevant parts of your notes — up t
 - Hand-written text chunking with overlap
 - Semantic search with a Chroma vector database
 - A chat interface built with Streamlit
+- A FastAPI `/ask` endpoint, so other programs can call the chatbot
+- Docker support for running the API anywhere
 
 ## How it works
 
 1. **Chunking:** each note in `notes/` is split into smaller pieces with a hand-written `chunk_text()` function. Long paragraphs are cut into overlapping segments so that no idea is lost at a boundary.
 2. **Embedding and storage:** every chunk is turned into a vector with `sentence-transformers` (`all-MiniLM-L6-v2`) and stored in a Chroma vector database, together with its source file name.
 3. **Retrieval:** your question is embedded the same way, and Chroma returns the top 3 most similar chunks (cosine similarity). Each is checked against a minimum score threshold, and only the ones that pass are kept. If none pass, the app answers "I couldn't find anything relevant in your notes."
-4. **Generation:** the surviving chunks are joined into one context and sent, with your question, to `Qwen2.5-7B-Instruct` through the Hugging Face Inference API (via the Featherless AI provider), with an instruction to answer only from the given context. This lets the app answer questions that need information from more than one note.
-5. **Interface:** a Streamlit chat UI shows the answer with its source files and confidence.
+4. **Generation:** the surviving chunks are joined into one context and sent, with your question, to `llama-3.1-8b-instant` through the Groq API, with an instruction to answer only from the given context. This lets the app answer questions that need information from more than one note.
+5. **Interface:** a Streamlit chat UI shows the answer with its source files and confidence. The same logic is also exposed as a JSON API through FastAPI.
 
 ```
 Question → embed → Chroma finds the top 3 chunks → score check on each →
@@ -45,9 +47,12 @@ The included notes cover a few machine learning topics. Try:
 
 ```
 ├── app.py            # Streamlit chat interface
+├── api.py            # FastAPI endpoint (POST /ask)
 ├── rag.py            # Builds the prompt and generates the answer
 ├── search.py         # Chunking, embedding and retrieval (Chroma)
 ├── notes/            # The text files the chatbot answers from
+├── Dockerfile        # Container recipe for the API
+├── .dockerignore     # Files kept out of the Docker image
 └── requirements.txt  # Python dependencies
 ```
 
@@ -62,16 +67,44 @@ The included notes cover a few machine learning topics. Try:
 ```
    pip install -r requirements.txt
 ```
-3. Set your Hugging Face token. You need a free, fine-grained access token with "Make calls to Inference Providers" enabled:
+3. Set your Groq API key. You can create a free one at console.groq.com:
 ```
-   set HF_TOKEN=your_huggingface_token
+   set GROQ_API_KEY=your_groq_key
 ```
-   On Mac or Linux, use `export HF_TOKEN=your_huggingface_token` instead.
-4. Start the app:
+   On Mac or Linux, use `export GROQ_API_KEY=your_groq_key` instead.
+4. Start the Streamlit app:
 ```
    python -m streamlit run app.py
 ```
    It opens at `http://localhost:8501`.
+
+## Run it as an API
+
+To run the FastAPI service without Docker:
+```
+python -m uvicorn api:app --reload
+```
+Then open `http://127.0.0.1:8000/docs` to try the `/ask` endpoint from your browser.
+
+## Run it with Docker
+
+1. Build the image:
+```
+   docker build -t rag-api .
+```
+2. Run the container, passing your key at run time (it is never stored in the image):
+```
+   docker run -p 8000:8000 -e GROQ_API_KEY=your_groq_key rag-api
+```
+3. Open `http://127.0.0.1:8000/docs` and try the `/ask` endpoint, or call it directly:
+```
+   curl -X POST "http://127.0.0.1:8000/ask" -H "Content-Type: application/json" -d "{\"question\": \"What is overfitting?\"}"
+```
+
+The response is JSON with the answer, the source files used, and the similarity score:
+```
+{"answer": "...", "sources": ["overfitting.txt"], "score": 0.78}
+```
 
 ## Use your own notes
 
@@ -83,11 +116,11 @@ Delete the example files in `notes/` and add your own `.txt` files. The app read
 2. On share.streamlit.io, create a new app from that repo, with `app.py` as the main file.
 3. Under **Advanced settings → Secrets**, add:
 ```
-   HF_TOKEN = "your_huggingface_token"
+   GROQ_API_KEY = "your_groq_key"
 ```
 4. Click **Deploy**.
 
-Never commit your token to the repo. It belongs only in Streamlit's Secrets box or in an environment variable.
+Never commit your key to the repo. It belongs only in Streamlit's Secrets box or in an environment variable.
 
 ## Limitations
 
@@ -96,7 +129,7 @@ Never commit your token to the repo. It belongs only in Streamlit's Secrets box 
 - Only `.txt` files are supported.
 - RAG reduces hallucination but doesn't eliminate it. Always check the sources shown.
 - It has no memory of earlier questions in the conversation; each question is answered independently.
-- Depends on a hosted model through an external API. Model and provider availability can change, which may require updating the provider or model name in `rag.py`.
+- Depends on a hosted model through the Groq API. Model availability and free-tier limits can change, which may require updating the model name in `rag.py`.
 - The free hosted app goes to sleep after a period without visitors and takes a moment to wake up.
 
 ## Possible improvements
@@ -105,9 +138,8 @@ Never commit your token to the repo. It belongs only in Streamlit's Secrets box 
 - Save the vector database to disk
 - Support PDF and Markdown files
 - Add conversation memory for follow-up questions
-- Add Docker for containerized deployment
 - Evaluate answer quality with a set of test questions
 
 ## Built with
 
-Python · Streamlit · sentence-transformers · Chroma · Hugging Face Inference API
+Python · Streamlit · FastAPI · Docker · sentence-transformers · Chroma · Groq

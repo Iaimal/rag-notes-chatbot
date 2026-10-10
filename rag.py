@@ -1,13 +1,10 @@
 # rag.py
 from search import search
-from huggingface_hub import InferenceClient
+from groq import Groq
 import os
 
-client = InferenceClient(
-    model="Qwen/Qwen2.5-7B-Instruct",
-    provider="featherless-ai",
-    token=os.environ.get("HF_TOKEN"),
-)
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+MODEL_NAME = "openai/gpt-oss-20b"
 
 def generate_answer(context, question):
     messages = [
@@ -20,7 +17,7 @@ def generate_answer(context, question):
             ),
         }
     ]
-    result = client.chat_completion(messages=messages, max_tokens=250)
+    result = client.chat.completions.create(model=MODEL_NAME, messages=messages, max_tokens=400)
     answer = result.choices[0].message.content
     return answer.strip()
 
